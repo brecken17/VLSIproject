@@ -24,7 +24,7 @@ module VectorProcessingV3 #(
     output reg mem_read,
     output reg mem_write,
     
-    input wire [31:0] vl             // Current vector length
+    input wire [24:0] vl             // Current vector length
 );
 
     

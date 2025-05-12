@@ -130,6 +130,6 @@ module picorv32_topsram #(
         .mem_read    (mem_valid & ~|mem_wstrb),
         .mem_write   (mem_valid & |mem_wstrb),
         
-        .vl          (vec_vl)
+        .vl          (pcpi_insn[31:7])
     );
 endmodule

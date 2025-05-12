@@ -32,7 +32,7 @@ def build_top():
     chip.input("picorv32.v", package='picorv32')
 
     # Optional: silence each task's output in the terminal.
-    chip.set('option', 'quiet', True)
+    chip.set('option', 'quiet', False)
 
     # Set die outline and core area.
     margin = 10
