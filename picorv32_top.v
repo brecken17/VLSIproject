@@ -1,6 +1,8 @@
 `timescale 1 ns / 1 ps
 
-module picorv32_top #(
+`timescale 1 ns / 1 ps
+
+module picorv32_topsram #(
     parameter [0:0] ENABLE_COUNTERS = 1,
     parameter [0:0] ENABLE_COUNTERS64 = 1,
     parameter [0:0] ENABLE_REGS_16_31 = 1,
@@ -26,15 +28,10 @@ module picorv32_top #(
     parameter [31:0] LATCHED_IRQ = 32'hffff_ffff,
     parameter [31:0] PROGADDR_RESET = 32'h0000_0000,
     parameter [31:0] PROGADDR_IRQ = 32'h0000_0010,
-    parameter [31:0] STACKADDR = 32'hffff_ffff,
-    
-    // Vector unit parameters
-    parameter VECTOR_LENGTH = 4,
-    parameter DATA_WIDTH = 32,
-    parameter VECTOR_REGISTERS = 32
+    parameter [31:0] STACKADDR = 32'hffff_ffff
 ) (
     input clk,
-    input resetn,
+    resetn,
     output reg trap,
 
     // Look-Ahead Interface
@@ -107,29 +104,9 @@ module picorv32_top #(
     // No 'ready' signal in sky130 SRAM macro; presumably it is single-cycle?
     always @(posedge clk) mem_ready <= mem_valid;
 
-    // Vector unit control signals
-    localparam VECTOR_CTRL_RESET = 0;  // Position of reset bit in vector_ctrl_reg
-    reg [31:0] vector_ctrl_reg;
-    
-    // Vector unit interface signals
-    reg [7:0] vec_funct;
-    reg [4:0] vec_vs1;
-    reg [4:0] vec_vs2;
-    reg [4:0] vec_vr;
-    reg vec_start_op;
-    wire vec_op_done;
-    
-    // Vector memory interface
-    wire [31:0] vec_mem_wdata;
-    wire [31:0] vec_mem_addr;
-    wire vec_mem_valid;
-    wire [3:0] vec_mem_wstrb;
-    
-    // Vector length register
-    wire [31:0] vec_vl;
-
     // (Signals have the same name as the picorv32 module: use '.*')
     picorv32 rv32_soc (.*);
+
 
     VectorProcessingV3 #(
         .VECTOR_LENGTH(VECTOR_LENGTH),
@@ -137,21 +114,21 @@ module picorv32_top #(
         .NUM_REGISTERS(VECTOR_REGISTERS)
     ) vector_unit (
         .clk         (clk),
-        .rst_n       (resetn & ~vector_ctrl_reg[VECTOR_CTRL_RESET]),
+        .rst_n       (resetn),
         
         .enable      (1'b1),
-        .funct       (vec_funct),
-        .vs1         (vec_vs1),
-        .vs2         (vec_vs2),
-        .vr          (vec_vr),
-        .start_op    (vec_start_op),
-        .op_done     (vec_op_done),
+        .funct       (pcpi_insn[6:0]),
+        .vs1         (pcpi_rs1),
+        .vs2         (pcpi_rs2),
+        .vr          (pcpi_rd),
+        .start_op    (pcpi_valid),
+        .op_done     (pcpi_ready),
         
         .mem_data_in (mem_rdata),
-        .mem_data_out(vec_mem_wdata),
-        .mem_addr    (vec_mem_addr),
-        .mem_read    (vec_mem_valid & ~|vec_mem_wstrb),
-        .mem_write   (vec_mem_valid & |vec_mem_wstrb),
+        .mem_data_out(mem_wdata),
+        .mem_addr    (mem_addr),
+        .mem_read    (mem_valid & ~|mem_wstrb),
+        .mem_write   (mem_valid & |mem_wstrb),
         
         .vl          (vec_vl)
     );

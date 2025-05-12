@@ -11,14 +11,14 @@ def setup(stackup=None):
 
     # Create library Chip object.
     lib = siliconcompiler.Library(design)
-    lib.register_source('vlsiVectorProcessing',
+    lib.register_source('VectorProcessingV3',
                         'git+https://github.com/brecken17/VLSIproject')
     lib.set('output', stackup, 'gds',
             'VectorProcessingV3/VectorProcessingV3.gds',
-            package='vlsiVectorProcessing')
+            package='VectorProcessingV3')
     lib.set('output', stackup, 'lef',
             'VectorProcessingV3/VectorProcessingV3.lef',
-            package='vlsiVectorProcessing')
+            package='VectorProcessingV3')
 
     rootdir = os.path.dirname(__file__)
     lib.set('output', 'blackbox', 'verilog', os.path.join(rootdir, "VectorProcessingV3.bb.v"))
