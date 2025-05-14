@@ -19,7 +19,7 @@ def rtl2gds(target=skywater130_demo):
     chip.input('picorv32.v', package='picorv32')
 
     chip.set('option', 'quiet', False)
-    chip.set('option', 'remote', True)
+    chip.set('option', 'remote', False)
 
     chip.clock('clk', period=25)
 

@@ -1,8 +1,6 @@
 `timescale 1 ns / 1 ps
 
-`timescale 1 ns / 1 ps
-
-module picorv32_topsram #(
+module picorv32_top #(
     parameter [0:0] ENABLE_COUNTERS = 1,
     parameter [0:0] ENABLE_COUNTERS64 = 1,
     parameter [0:0] ENABLE_REGS_16_31 = 1,
@@ -28,7 +26,12 @@ module picorv32_topsram #(
     parameter [31:0] LATCHED_IRQ = 32'hffff_ffff,
     parameter [31:0] PROGADDR_RESET = 32'h0000_0000,
     parameter [31:0] PROGADDR_IRQ = 32'h0000_0010,
-    parameter [31:0] STACKADDR = 32'hffff_ffff
+    parameter [31:0] STACKADDR = 32'hffff_ffff,
+    
+    // Vector unit parameters
+    parameter VECTOR_LENGTH = 4,
+    parameter DATA_WIDTH = 32,
+    parameter VECTOR_REGISTERS = 32
 ) (
     input clk,
     resetn,

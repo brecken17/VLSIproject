@@ -2,18 +2,13 @@
 
 import os
 from siliconcompiler import Chip
-#import VectorProcessingV3
 from siliconcompiler.targets import skywater130_demo
-
-try:
-    from . import VectorProcessingV3
-except:  # noqa E722
-    import VectorProcessingV3
+#import VectorProcessingV3
 
 
 def build_top():
     # Core settings.
-    design = 'picorv32_top'
+    design = 'picorv32_top2'
     target = skywater130_demo
     die_w = 1000
     die_h = 1000
@@ -41,8 +36,8 @@ def build_top():
                                         (die_w - margin, die_h - margin)])
 
     # Setup Vector Processing macro library.
-    chip.use(VectorProcessingV3, stackup=chip.get('option', 'stackup'))
-    chip.add('asic', 'macrolib', 'VectorProcessingV3')
+    #chip.use(VectorProcessingV3, stackup=chip.get('option', 'stackup'))
+    #chip.add('asic', 'macrolib', 'VectorProcessingV3')
 
     # SRAM pins are inside the macro boundary; no routing blockage padding is needed.
     chip.set('tool', 'openroad', 'task', 'route', 'var', 'grt_macro_extension', '0')
@@ -52,8 +47,8 @@ def build_top():
     chip.set('tool', 'openroad', 'task', 'place', 'var', 'place_density', '0.5')
 
     # Place macro instance.
-    chip.set('constraint', 'component', 'VectorProcessing', 'placement', (150, 150))
-    chip.set('constraint', 'component', 'VectorProcessing', 'rotation', 'R180')
+    #chip.set('constraint', 'component', 'VectorProcessingV3', 'placement', (150, 150))
+    #chip.set('constraint', 'component', 'VectorProcessingV3', 'rotation', 'R180')
 
     # Set clock period, so that we won't need to provide an SDC constraints file.
     chip.clock('clk', period=25)
@@ -72,4 +67,3 @@ def build_top():
 
 if __name__ == '__main__':
     build_top()
-

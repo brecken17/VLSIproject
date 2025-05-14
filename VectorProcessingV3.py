@@ -1,28 +1,17 @@
-import siliconcompiler
+from siliconcompiler import Library
 import os
 
-
 def setup(stackup=None):
-    # Core values.
-    design = 'VectorProcessingV3'
 
-    if stackup is None:
-        raise RuntimeError('stackup cannot be None')
+	lib = Library('VectorProcessingV3', package='VectorProcessing', auto_enable=True)
+	lib.register_source('VectorProcessing', path=__file__)
+	lib.input('VectorProcessingV3.v')
+	lib.add('option', 'idir', 'include')
 
-    # Create library Chip object.
-    lib = siliconcompiler.Library(design)
-    lib.register_source('VectorProcessingV3',
-                        'git+https://github.com/brecken17/VLSIproject')
-    lib.set('output', stackup, 'gds',
-            'VectorProcessingV3/VectorProcessingV3.gds',
-            package='VectorProcessingV3')
-    lib.set('output', stackup, 'lef',
-            'VectorProcessingV3/VectorProcessingV3.lef',
-            package='VectorProcessingV3')
+	rootdir = os.path.dirname(__file__)
+	lib.set('output', 'blackbox', 'verilog', os.path.join(rootdir, "VectorProcessingV3.bb.v"))
+    	# Ensure this file gets uploaded to remote
+    	#lib.set('output', 'blackbox', 'verilog', True, field='copy')
 
-    rootdir = os.path.dirname(__file__)
-    lib.set('output', 'blackbox', 'verilog', os.path.join(rootdir, "VectorProcessingV3.bb.v"))
-    # Ensure this file gets uploaded to remote
-    lib.set('output', 'blackbox', 'verilog', True, field='copy')
+	return lib
 
-    return lib

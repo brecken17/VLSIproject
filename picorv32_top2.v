@@ -1,3 +1,226 @@
+`timescale 1 ns / 1 ps
+
+module picorv32_top2 #(
+    parameter [0:0] ENABLE_COUNTERS = 1,
+    parameter [0:0] ENABLE_COUNTERS64 = 1,
+    parameter [0:0] ENABLE_REGS_16_31 = 1,
+    parameter [0:0] ENABLE_REGS_DUALPORT = 1,
+    parameter [0:0] LATCHED_MEM_RDATA = 0,
+    parameter [0:0] TWO_STAGE_SHIFT = 1,
+    parameter [0:0] BARREL_SHIFTER = 0,
+    parameter [0:0] TWO_CYCLE_COMPARE = 0,
+    parameter [0:0] TWO_CYCLE_ALU = 0,
+    parameter [0:0] COMPRESSED_ISA = 0,
+    parameter [0:0] CATCH_MISALIGN = 1,
+    parameter [0:0] CATCH_ILLINSN = 1,
+    parameter [0:0] ENABLE_PCPI = 0,
+    parameter [0:0] ENABLE_MUL = 0,
+    parameter [0:0] ENABLE_FAST_MUL = 0,
+    parameter [0:0] ENABLE_DIV = 0,
+    parameter [0:0] ENABLE_IRQ = 0,
+    parameter [0:0] ENABLE_IRQ_QREGS = 1,
+    parameter [0:0] ENABLE_IRQ_TIMER = 1,
+    parameter [0:0] ENABLE_TRACE = 0,
+    parameter [0:0] REGS_INIT_ZERO = 0,
+    parameter [31:0] MASKED_IRQ = 32'h0000_0000,
+    parameter [31:0] LATCHED_IRQ = 32'hffff_ffff,
+    parameter [31:0] PROGADDR_RESET = 32'h0000_0000,
+    parameter [31:0] PROGADDR_IRQ = 32'h0000_0010,
+    parameter [31:0] STACKADDR = 32'hffff_ffff,
+    
+    // Vector unit parameters
+    parameter VECTOR_LENGTH = 4,
+    parameter DATA_WIDTH = 32,
+    parameter VECTOR_REGISTERS = 32
+) (
+    input clk,
+    resetn,
+    output reg trap,
+
+    // Look-Ahead Interface
+    output            mem_la_read,
+    output            mem_la_write,
+    output     [31:0] mem_la_addr,
+    output reg [31:0] mem_la_wdata,
+    output reg [ 3:0] mem_la_wstrb,
+
+    // Pico Co-Processor Interface (PCPI)
+    output reg        pcpi_valid,
+    output reg [31:0] pcpi_insn,
+    output     [31:0] pcpi_rs1,
+    output     [31:0] pcpi_rs2,
+    input             pcpi_wr,
+    input      [31:0] pcpi_rd,
+    input             pcpi_wait,
+    input             pcpi_ready,
+
+    // IRQ Interface
+    input      [31:0] irq,
+    output reg [31:0] eoi,
+
+`ifdef RISCV_FORMAL
+    output reg        rvfi_valid,
+    output reg [63:0] rvfi_order,
+    output reg [31:0] rvfi_insn,
+    output reg        rvfi_trap,
+    output reg        rvfi_halt,
+    output reg        rvfi_intr,
+    output reg [ 1:0] rvfi_mode,
+    output reg [ 1:0] rvfi_ixl,
+    output reg [ 4:0] rvfi_rs1_addr,
+    output reg [ 4:0] rvfi_rs2_addr,
+    output reg [31:0] rvfi_rs1_rdata,
+    output reg [31:0] rvfi_rs2_rdata,
+    output reg [ 4:0] rvfi_rd_addr,
+    output reg [31:0] rvfi_rd_wdata,
+    output reg [31:0] rvfi_pc_rdata,
+    output reg [31:0] rvfi_pc_wdata,
+    output reg [31:0] rvfi_mem_addr,
+    output reg [ 3:0] rvfi_mem_rmask,
+    output reg [ 3:0] rvfi_mem_wmask,
+    output reg [31:0] rvfi_mem_rdata,
+    output reg [31:0] rvfi_mem_wdata,
+
+    output reg [63:0] rvfi_csr_mcycle_rmask,
+    output reg [63:0] rvfi_csr_mcycle_wmask,
+    output reg [63:0] rvfi_csr_mcycle_rdata,
+    output reg [63:0] rvfi_csr_mcycle_wdata,
+
+    output reg [63:0] rvfi_csr_minstret_rmask,
+    output reg [63:0] rvfi_csr_minstret_wmask,
+    output reg [63:0] rvfi_csr_minstret_rdata,
+    output reg [63:0] rvfi_csr_minstret_wdata,
+`endif
+
+    // Trace Interface
+    output reg        trace_valid,
+    output reg [35:0] trace_data
+);
+
+    // Memory signals.
+    reg mem_valid, mem_instr, mem_ready;
+    wire [31:0] mem_addr; // Changed from reg to wire
+    wire [31:0] mem_wdata; // Wire for memory write data
+    reg [ 3:0] mem_wstrb;
+    reg [31:0] mem_rdata;
+    
+    // Add new wires for CPU and vector unit signals
+    wire [31:0] cpu_mem_addr;
+    wire [31:0] vector_mem_addr;
+    wire [31:0] vector_mem_wdata;
+    reg use_vector_data;
+    
+    // Add intermediate signals for mem_read and mem_write
+    wire mem_read_signal;
+    wire mem_write_signal;
+    
+    // Assign the intermediate signals
+    assign mem_read_signal = mem_valid & ~|mem_wstrb;
+    assign mem_write_signal = mem_valid & |mem_wstrb;
+
+    // No 'ready' signal in sky130 SRAM macro; presumably it is single-cycle?
+    always @(posedge clk) mem_ready <= mem_valid;
+    
+    // Mux to select between CPU and vector unit data
+    assign mem_wdata = use_vector_data ? vector_mem_wdata : pcpi_rs2;
+    
+    // Mux to select between CPU and vector unit address
+    assign mem_addr = use_vector_data ? vector_mem_addr : cpu_mem_addr;
+    
+    // Logic to determine when to use vector data
+    always @(*) begin
+        use_vector_data = pcpi_valid && (pcpi_insn[6:0] == 7'b0100000); // VSE instruction
+    end
+
+    // PicoRV32 CPU instantiation
+    picorv32 rv32_soc (
+        .clk(clk),
+        .resetn(resetn),
+        .trap(trap),
+        .mem_valid(mem_valid),
+        .mem_instr(mem_instr),
+        .mem_ready(mem_ready),
+        .mem_addr(cpu_mem_addr), // Connect to CPU-specific address
+        .mem_wdata(pcpi_rs2),    // Connect to rs2 directly
+        .mem_wstrb(mem_wstrb),
+        .mem_rdata(mem_rdata),
+        .mem_la_read(mem_la_read),
+        .mem_la_write(mem_la_write),
+        .mem_la_addr(mem_la_addr),
+        .mem_la_wdata(mem_la_wdata),
+        .mem_la_wstrb(mem_la_wstrb),
+        .pcpi_valid(pcpi_valid),
+        .pcpi_insn(pcpi_insn),
+        .pcpi_rs1(pcpi_rs1),
+        .pcpi_rs2(pcpi_rs2),
+        .pcpi_wr(pcpi_wr),
+        .pcpi_rd(pcpi_rd),
+        .pcpi_wait(pcpi_wait),
+        .pcpi_ready(pcpi_ready),
+        .irq(irq),
+        .eoi(eoi),
+        `ifdef RISCV_FORMAL
+        .rvfi_valid(rvfi_valid),
+        .rvfi_order(rvfi_order),
+        .rvfi_insn(rvfi_insn),
+        .rvfi_trap(rvfi_trap),
+        .rvfi_halt(rvfi_halt),
+        .rvfi_intr(rvfi_intr),
+        .rvfi_mode(rvfi_mode),
+        .rvfi_ixl(rvfi_ixl),
+        .rvfi_rs1_addr(rvfi_rs1_addr),
+        .rvfi_rs2_addr(rvfi_rs2_addr),
+        .rvfi_rs1_rdata(rvfi_rs1_rdata),
+        .rvfi_rs2_rdata(rvfi_rs2_rdata),
+        .rvfi_rd_addr(rvfi_rd_addr),
+        .rvfi_rd_wdata(rvfi_rd_wdata),
+        .rvfi_pc_rdata(rvfi_pc_rdata),
+        .rvfi_pc_wdata(rvfi_pc_wdata),
+        .rvfi_mem_addr(rvfi_mem_addr),
+        .rvfi_mem_rmask(rvfi_mem_rmask),
+        .rvfi_mem_wmask(rvfi_mem_wmask),
+        .rvfi_mem_rdata(rvfi_mem_rdata),
+        .rvfi_mem_wdata(rvfi_mem_wdata),
+        .rvfi_csr_mcycle_rmask(rvfi_csr_mcycle_rmask),
+        .rvfi_csr_mcycle_wmask(rvfi_csr_mcycle_wmask),
+        .rvfi_csr_mcycle_rdata(rvfi_csr_mcycle_rdata),
+        .rvfi_csr_mcycle_wdata(rvfi_csr_mcycle_wdata),
+        .rvfi_csr_minstret_rmask(rvfi_csr_minstret_rmask),
+        .rvfi_csr_minstret_wmask(rvfi_csr_minstret_wmask),
+        .rvfi_csr_minstret_rdata(rvfi_csr_minstret_rdata),
+        .rvfi_csr_minstret_wdata(rvfi_csr_minstret_wdata),
+        `endif
+        .trace_valid(trace_valid),
+        .trace_data(trace_data)
+    );
+    
+    // Vector Processing Unit instantiation
+    VectorProcessingV3 #(
+        .VECTOR_LENGTH(VECTOR_LENGTH),
+        .DATA_WIDTH(DATA_WIDTH),
+        .NUM_REGISTERS(VECTOR_REGISTERS)
+    ) vector_unit (
+        .clk         (clk),
+        .rst_n       (resetn),
+        
+        .enable      (1'b1),
+        .funct       (pcpi_insn[6:0]),
+        .vs1         (pcpi_rs1),
+        .vs2         (pcpi_rs2),
+        .vr          (pcpi_rd),
+        .start_op    (pcpi_valid),
+        .op_done     (pcpi_ready),
+        
+        .mem_data_in (mem_rdata),
+        .mem_data_out(vector_mem_wdata), // Connect to the vector-specific data wire
+        .mem_addr    (vector_mem_addr),  // Connect to the vector-specific address wire
+        .mem_read    (mem_read_signal),  // Connect to the intermediate signal
+        .mem_write   (mem_write_signal), // Connect to the intermediate signal
+        
+        .vl          (pcpi_insn[31:7])
+    );
+endmodule
+
 module VectorProcessingV3 #(
     parameter VECTOR_LENGTH = 4,      // Number of elements per vector
     parameter DATA_WIDTH = 32,        // Width of each element
@@ -193,5 +416,4 @@ module VectorProcessingV3 #(
             endcase
         end
     end
-    
 endmodule
